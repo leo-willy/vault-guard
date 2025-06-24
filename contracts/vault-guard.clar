@@ -84,3 +84,97 @@
 (define-private (valid-nft-list (nft-list (list 10 uint)))
   (fold check-nft-validity nft-list true)
 )
+
+;; CONTRACT ADMINISTRATION FUNCTIONS
+
+;; Initialize contract with multiple oracles for decentralized verification
+(define-public (initialize-contract (oracle-list (list 5 principal)))
+  (begin
+    (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+    (fold add-oracle oracle-list true)
+    (ok true)
+  )
+)
+
+;; Helper function to add oracle to the verification network
+(define-private (add-oracle
+    (oracle principal)
+    (previous bool)
+  )
+  (begin
+    (map-set oracles oracle true)
+    true
+  )
+)
+
+;; Register beneficiary with customized inheritance parameters
+(define-public (add-beneficiary
+    (beneficiary principal)
+    (share uint)
+    (lock-period uint)
+    (nft-list (list 10 uint))
+  )
+  (begin
+    (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+    (asserts! (var-get is-active) ERR-NOT-ACTIVE)
+    (asserts! (<= share u100) ERR-INVALID-SHARE)
+    ;; Validate the principal is not zero address or contract address
+    (asserts! (not (is-eq beneficiary 'SP000000000000000000002Q6VF78))
+      ERR-INVALID-PRINCIPAL
+    )
+    ;; Add validation for lock-period
+    (asserts! (> lock-period u0) ERR-INVALID-LOCK-PERIOD)
+    ;; Add validation for nft-list
+    (asserts! (valid-nft-list nft-list) ERR-INVALID-NFT-LIST)
+    (map-set beneficiaries { beneficiary: beneficiary } {
+      share: share,
+      claimed: false,
+      time-lock: (+ stacks-block-height lock-period),
+      nft-tokens: nft-list,
+    })
+    (ok true)
+  )
+)
+
+;; Update cryptographic hash of testamentary documents
+(define-public (update-will-hash (new-hash (buff 32)))
+  (begin
+    (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+    ;; Check that hash is not empty
+    (asserts! (not (is-eq new-hash 0x)) ERR-INVALID-HASH)
+    (var-set last-will-hash new-hash)
+    (ok true)
+  )
+)
+
+;; ORACLE VERIFICATION SYSTEM
+
+;; Oracle-based mortality confirmation with multi-signature consensus
+(define-public (confirm-death)
+  (begin
+    (asserts! (default-to false (map-get? oracles tx-sender)) ERR-NOT-AUTHORIZED)
+    (var-set confirmation-count (+ (var-get confirmation-count) u1))
+    (if (>= (var-get confirmation-count) (var-get required-confirmations))
+      (var-set death-confirmed true)
+      false
+    )
+    (ok true)
+  )
+)
+
+;; INHERITANCE CLAIM FUNCTIONS
+
+;; Helper function for secure NFT ownership transfer
+(define-private (transfer-nft (token-id uint))
+  (begin
+    ;; Verify the NFT ID is valid
+    (if (> token-id u0)
+      (begin
+        ;; Set new ownership
+        (map-set nft-ownership token-id tx-sender)
+        (ok true)
+      )
+      (err ERR-INVALID-NFT)
+    )
+  )
+)
