@@ -178,3 +178,92 @@
     )
   )
 )
+
+;; Execute inheritance claim with integrated asset transfer
+(define-public (claim-inheritance)
+  (let ((beneficiary-data (unwrap! (map-get? beneficiaries { beneficiary: tx-sender })
+      ERR-NOT-AUTHORIZED
+    )))
+    (begin
+      (asserts! (var-get death-confirmed) ERR-DEATH-NOT-CONFIRMED)
+      (asserts! (not (get claimed beneficiary-data)) ERR-ALREADY-CLAIMED)
+      (asserts! (>= stacks-block-height (get time-lock beneficiary-data))
+        ERR-TIME-LOCK
+      )
+      ;; Calculate share amount with inheritance tax
+      (let (
+          (share-amount (/
+            (* (stx-get-balance (as-contract tx-sender))
+              (get share beneficiary-data)
+            )
+            u100
+          ))
+          (tax-amount (/ (* share-amount (var-get inheritance-tax)) u100))
+        )
+        ;; Transfer NFTs
+        (map transfer-nft (get nft-tokens beneficiary-data))
+        ;; Update claimed status
+        (map-set beneficiaries { beneficiary: tx-sender }
+          (merge beneficiary-data { claimed: true })
+        )
+        ;; Transfer share minus tax
+        (as-contract (stx-transfer? (- share-amount tax-amount) contract-caller tx-sender))
+      )
+    )
+  )
+)
+
+;; PHASED INHERITANCE RELEASE SYSTEM
+
+(define-map inheritance-phases
+  { beneficiary: principal }
+  {
+    phase-1-claimed: bool,
+    phase-2-claimed: bool,
+    phase-1-amount: uint,
+    phase-2-amount: uint,
+  }
+)
+
+;; Execute first phase of graduated inheritance release
+(define-private (claim-phase-1 (phase-data {
+  phase-1-claimed: bool,
+  phase-2-claimed: bool,
+  phase-1-amount: uint,
+  phase-2-amount: uint,
+}))
+  (begin
+    (asserts! (not (get phase-1-claimed phase-data)) ERR-ALREADY-CLAIMED)
+    (let ((amount (/
+        (* (stx-get-balance (as-contract tx-sender))
+          (get phase-1-amount phase-data)
+        )
+        u100
+      )))
+      (begin
+        (map-set inheritance-phases { beneficiary: tx-sender }
+          (merge phase-data { phase-1-claimed: true })
+        )
+        (as-contract (stx-transfer? amount contract-caller tx-sender))
+      )
+    )
+  )
+)
+
+;; DISPUTE RESOLUTION SYSTEM
+
+(define-map disputes
+  { disputer: principal }
+  {
+    evidence-hash: (buff 32),
+    resolved: bool,
+  }
+)
+
+(define-map dispute-metadata
+  { disputer: principal }
+  {
+    resolution-votes: uint,
+    timestamp: uint,
+  }
+)
