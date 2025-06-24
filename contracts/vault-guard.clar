@@ -267,3 +267,94 @@
     timestamp: uint,
   }
 )
+
+(define-map resolution-votes
+  {
+    dispute-id: principal,
+    voter: principal,
+  }
+  bool
+)
+
+;; Voting threshold for dispute resolution consensus
+(define-data-var resolution-threshold uint u3)
+
+;; Initiate formal dispute with cryptographic evidence
+(define-public (raise-dispute (evidence-hash (buff 32)))
+  (let ((beneficiary-data (unwrap! (map-get? beneficiaries { beneficiary: tx-sender })
+      ERR-NOT-AUTHORIZED
+    )))
+    (begin
+      ;; Check that evidence hash is not empty
+      (asserts! (not (is-eq evidence-hash 0x)) ERR-INVALID-HASH)
+      ;; Check if dispute already exists
+      (asserts! (is-none (map-get? disputes { disputer: tx-sender }))
+        ERR-DISPUTE-EXISTS
+      )
+      (map-set disputes { disputer: tx-sender } {
+        evidence-hash: evidence-hash,
+        resolved: false,
+      })
+      (ok true)
+    )
+  )
+)
+
+;; Automated dispute resolution mechanism
+(define-private (resolve-dispute (disputer principal))
+  (match (map-get? disputes { disputer: disputer })
+    dispute-data (begin
+      (map-set disputes { disputer: disputer }
+        (merge dispute-data { resolved: true })
+      )
+      true
+    )
+    false
+  )
+)
+
+;; EMERGENCY AND ADMINISTRATIVE FUNCTIONS
+
+;; Emergency contract deactivation protocol
+(define-public (deactivate-contract)
+  (begin
+    (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+    (var-set is-active false)
+    (ok true)
+  )
+)
+
+;; Update oracle consensus requirements for enhanced security
+(define-public (update-required-confirmations (new-count uint))
+  (begin
+    (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+    ;; Validate new confirmation count
+    (asserts! (> new-count u0) ERR-INVALID-CONFIRMATION-COUNT)
+    (var-set required-confirmations new-count)
+    (ok true)
+  )
+)
+
+;; READ-ONLY FUNCTIONS
+
+;; Retrieve comprehensive beneficiary information
+(define-read-only (get-beneficiary-info (beneficiary principal))
+  (map-get? beneficiaries { beneficiary: beneficiary })
+)
+
+;; Get complete contract operational status
+(define-read-only (get-contract-status)
+  {
+    active: (var-get is-active),
+    death-confirmed: (var-get death-confirmed),
+    confirmation-count: (var-get confirmation-count),
+    required-confirmations: (var-get required-confirmations),
+    last-will-hash: (var-get last-will-hash),
+    inheritance-tax: (var-get inheritance-tax),
+  }
+)
+
+;; Query NFT ownership records
+(define-read-only (get-nft-owner (token-id uint))
+  (map-get? nft-ownership token-id)
+)
